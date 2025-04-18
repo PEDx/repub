@@ -173,14 +173,21 @@ export class Loader {
       }
       // replace hrefs (excluding anchors)
       // TODO: srcset?
-      const replace = async (el: Element, attr: string) =>
-        el.setAttribute(attr, await this.loadHref(el.getAttribute(attr) as string, href as string, parents));
+      const replace = async (el: Element, attr: string) => {
+        const value = el.getAttribute(attr);
+        if (!value || !href) return;
+        return el.setAttribute(attr, await this.loadHref(value, href as string, parents) as string);
+      };
       for (const el of doc.querySelectorAll('link[href]')) await replace(el, 'href');
       for (const el of doc.querySelectorAll('[src]')) await replace(el, 'src');
       for (const el of doc.querySelectorAll('[poster]')) await replace(el, 'poster');
       for (const el of doc.querySelectorAll('object[data]')) await replace(el, 'data');
       for (const el of doc.querySelectorAll('[*|href]:not([href])'))
-        el.setAttributeNS(NS.XLINK, 'href', await this.loadHref(el.getAttributeNS(NS.XLINK, 'href') as string, href as string, parents));
+        el.setAttributeNS(
+          NS.XLINK,
+          'href',
+          await this.loadHref(el.getAttributeNS(NS.XLINK, 'href') as string, href as string, parents) as string,
+        );
       // replace inline styles
       for (const el of doc.querySelectorAll('style'))
         if (el.textContent) el.textContent = await this.replaceCSS(el.textContent as string, href as string, parents);
@@ -192,7 +199,9 @@ export class Loader {
     }
 
     const result: string =
-      mediaType === MIME.CSS ? await this.replaceCSS(str, href as string, parents) : await this.replaceString(str, href as string, parents);
+      mediaType === MIME.CSS
+        ? await this.replaceCSS(str, href as string, parents)
+        : await this.replaceString(str, href as string, parents);
     return this.createURL(href as string, result as string, mediaType as string, parent);
   }
   async replaceCSS(str: string, href: string, parents: string[] = []) {
