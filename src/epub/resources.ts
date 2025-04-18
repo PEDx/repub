@@ -37,7 +37,7 @@ const filterAttribute = (attr: string, value: string | ((attr: string) => boolea
   return (el: Element) => el.getAttribute(attr) === value;
 };
 
-type TManifest = {
+export type TManifest = {
   [k: string]: string | string[] | null | undefined;
 };
 
