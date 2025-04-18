@@ -100,30 +100,38 @@ const tokenizer = (str: string) => {
   return tokens;
 };
 
-type TPart = {
+export type TPart = {
   index: number;
   offset: number | null;
   temporal?: number;
   spatial?: number[];
   side?: string;
-  id?: string;
+  id?: string | null;
   text?: string[];
 };
 
 const parser = (tokens: TToken[]) => {
   const parts: TPart[] = [];
   let state: string = '';
+
   for (const [type, val] of tokens) {
-    if (type === '/') parts.push({ index: val as number, offset: null });
-    else {
+    if (type === '/') {
+      parts.push({ index: val as number, offset: null });
+    } else {
       const last = parts[parts.length - 1]!;
-      if (type === ':') last.offset = val as number;
-      else if (type === '~') last.temporal = val as number;
-      else if (type === '@') last.spatial = (last.spatial ?? []).concat(val as number);
-      else if (type === ';s') last.side = val as string;
-      else if (type === '[') {
-        if (state === '/' && val) last.id = val as string;
-        else {
+
+      if (type === ':') {
+        last.offset = val as number;
+      } else if (type === '~') {
+        last.temporal = val as number;
+      } else if (type === '@') {
+        last.spatial = (last.spatial ?? []).concat(val as number);
+      } else if (type === ';s') {
+        last.side = val as string;
+      } else if (type === '[') {
+        if (state === '/' && val) {
+          last.id = val as string;
+        } else {
           last.text = (last.text ?? []).concat(val as string);
           continue;
         }
@@ -215,7 +223,7 @@ const getChildNodes = (node: Node, filter?: (x: Node) => number): Node[] => {
     : nodes;
 };
 
-const indexChildNodes = (node: HTMLElement, filter?: (x: Node) => number) => {
+const indexChildNodes = (node: Element, filter?: (x: Node) => number) => {
   const nodes: (Node[] | Node | string | null)[] = getChildNodes(node, filter).reduce((arr, node) => {
     if (!node) return [];
     let last = arr[arr.length - 1];
@@ -250,7 +258,7 @@ const indexChildNodes = (node: HTMLElement, filter?: (x: Node) => number) => {
   return nodes;
 };
 
-const partsToNode = (node: HTMLElement, parts: TPart[] | undefined, filter: (x: Node) => number) => {
+const partsToNode = (node: Element, parts: TPart[] | undefined, filter?: (x: Node) => number) => {
   if (!parts) return null;
 
   const { id } = parts[parts.length - 1]!;
@@ -265,7 +273,7 @@ const partsToNode = (node: HTMLElement, parts: TPart[] | undefined, filter: (x: 
     if (newNode === 'last') return { node: node.lastChild ?? node };
     if (newNode === 'before') return { node, before: true };
     if (newNode === 'after') return { node, after: true };
-    node = newNode as HTMLElement;
+    node = newNode as Element;
   }
   const { offset } = parts[parts.length - 1]!;
 
@@ -281,7 +289,7 @@ const partsToNode = (node: HTMLElement, parts: TPart[] | undefined, filter: (x: 
   }
 };
 
-type TParsed = { parent: TPart[][]; start: TPart[][]; end: TPart[][] };
+export type TParsed = { parent: TPart[][]; start: TPart[][]; end: TPart[][] };
 
 const collapse = (x: TPart[][] | TParsed, toEnd?: boolean) => {
   if ((x as TParsed).parent) {
@@ -328,9 +336,9 @@ interface IPart {
   offset: number | null;
 }
 
-const nodeToParts = (node: HTMLElement, offset: number | null, filter?: (x: Node) => number): IPart[] => {
+const nodeToParts = (node: Element, offset: number | null, filter?: (x: Node) => number): IPart[] => {
   const { parentNode, id } = node;
-  const indexed = indexChildNodes(parentNode as HTMLElement, filter);
+  const indexed = indexChildNodes(parentNode as Element, filter);
   const index = indexed.findIndex((x) => (Array.isArray(x) ? x.some((x) => x === node) : x === node));
   // adjust offset as if merging the text nodes in the chunk
   const chunk = indexed[index];
@@ -350,7 +358,7 @@ const nodeToParts = (node: HTMLElement, offset: number | null, filter?: (x: Node
   return (
     (
       parentNode !== node.ownerDocument.documentElement
-        ? nodeToParts(parentNode as HTMLElement, null, filter).concat(part)
+        ? nodeToParts(parentNode as Element, null, filter).concat(part)
         : [part]
     )
       // remove ignored nodes
@@ -366,7 +374,7 @@ export const parse = (cfi: string) => {
   return { parent, start, end } as TParsed;
 };
 
-export const toRange = (doc: Document, parts: TPart[][] | TParsed, filter: (x: Node) => number) => {
+export const toRange = (doc: Document, parts: TPart[][] | TParsed, filter?: (x: Node) => number) => {
   const startParts = collapse(parts);
   const endParts = collapse(parts, true);
 
@@ -395,23 +403,30 @@ export const toRange = (doc: Document, parts: TPart[][] | TParsed, filter: (x: N
 };
 
 // faster way of getting CFIs for sorted elements in a single parent
-export const fromElements = (elements: HTMLElement[]) => {
+export const fromElements = (elements: Element[]) => {
   const results: string[] = [];
   if (!elements.length) return results;
   const { parentNode } = elements[0]!;
-  const parts = nodeToParts(parentNode as HTMLElement, null);
-  for (const [index, node] of indexChildNodes(parentNode as HTMLElement).entries()) {
+  const parts = nodeToParts(parentNode as Element, null);
+  for (const [index, node] of indexChildNodes(parentNode as Element).entries()) {
     const el = elements[results.length];
     if (node === el) results.push(toString([parts.concat({ id: el.id, index, offset: null })]));
   }
   return results;
 };
 
+export const toElement = (doc: Document, parts?: TPart[]) => {
+  if (!parts) return null;
+  const ret = partsToNode(doc.documentElement, parts);
+  if (!ret) return null;
+  return ret.node as Element;
+};
+
 export const fromRange = (range: Range, filter: (x: Node) => number) => {
   const { startContainer, startOffset, endContainer, endOffset } = range;
-  const start = nodeToParts(startContainer as HTMLElement, startOffset, filter);
+  const start = nodeToParts(startContainer as Element, startOffset, filter);
   if (range.collapsed) return toString([start]);
-  const end = nodeToParts(endContainer as HTMLElement, endOffset, filter);
+  const end = nodeToParts(endContainer as Element, endOffset, filter);
   return buildRange([start], [end]);
 };
 
@@ -425,6 +440,7 @@ export const joinIndir = lift((...xs) => xs.join('!'));
 // turn indices into standard CFIs when you don't have an actual package document
 export const fake = {
   fromIndex: (index: number) => wrap(`/6/${(index + 1) * 2}`),
+  toIndex: (parts: TPart[]) => parts?.at(-1)?.index ?? 0 / 2 - 1,
 };
 
 // get CFI from Calibre bookmarks
@@ -451,10 +467,11 @@ export const fromCalibreHighlight = ({
   return buildRange(start as TPart[][], end as TPart[][]);
 };
 
-export const EpubCFI = {
+export const epubCFI = {
   parse,
   toRange,
   fromElements,
+  toElement,
   fromRange,
   joinIndir,
 };
